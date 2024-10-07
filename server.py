@@ -1,6 +1,7 @@
 import socket
 import threading
 import os
+import mimetypes
 
 # Function to handle a single client request
 def handle_client(client_socket):
@@ -16,37 +17,51 @@ def handle_client(client_socket):
             method, path, _ = first_line.split()
             
             if method == 'GET':
-                # Remove leading slash from path
-                if path == '/':
-                    path = "/index.html"  # Default to index.html
+                # Default to index.html if root is requested
+                if path == "/" or path == "/index.html":
+                    path = "index.html"
                 else:
+                    # Remove leading slash from path
                     path = path[1:]
-                
+
                 # Handle 301 redirection (page1.html -> page2.html)
                 if path == "page1.html":
                     response = "HTTP/1.0 301 Moved Permanently\r\n"
                     response += "Location: /page2.html\r\n\r\n"
                     client_socket.sendall(response.encode())
-                # Handle valid requests (200 OK)
+                # Serve files if they exist
                 elif os.path.exists(path):
-                    # Read the requested file
+                    # Guess the MIME type (e.g., image/jpeg, text/html)
+                    mime_type, _ = mimetypes.guess_type(path)
+                    if mime_type is None:
+                        mime_type = 'application/octet-stream'  # Default binary type
+
+                    # Read the file content
                     with open(path, 'rb') as file:
                         content = file.read()
-                    response = "HTTP/1.0 200 OK\r\n"
-                    response += "Content-Type: text/html\r\n\r\n"
+
+                    # Send the HTTP response
+                    response = f"HTTP/1.0 200 OK\r\nContent-Type: {mime_type}\r\n\r\n"
                     client_socket.sendall(response.encode() + content)
-                # Handle file not found (404)
+                # Handle file not found (404) - Serve custom 404.html page
                 else:
-                    response = "HTTP/1.0 404 Not Found\r\n\r\n"
-                    response += "<html><body><h1>404 Not Found</h1></body></html>"
-                    client_socket.sendall(response.encode())
+                    if os.path.exists('404.html'):
+                        # Read the 404.html content
+                        with open('404.html', 'rb') as file:
+                            content = file.read()
+
+                        response = "HTTP/1.0 404 Not Found\r\n"
+                        response += "Content-Type: text/html\r\n\r\n"
+                        client_socket.sendall(response.encode() + content)
+                    else:
+                        # Fallback 404 response if 404.html is not found
+                        response = "HTTP/1.0 404 Not Found\r\n\r\n"
+                        response += "<html><body><h1>404 Not Found</h1></body></html>"
+                        client_socket.sendall(response.encode())
             else:
                 # Method not supported
                 response = "HTTP/1.0 405 Method Not Allowed\r\n\r\n"
                 client_socket.sendall(response.encode())
-        else:
-            # Empty request, close connection
-            client_socket.close()
     except Exception as e:
         print(f"Error handling client: {e}")
     finally:
